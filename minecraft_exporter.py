@@ -57,11 +57,15 @@ class MinecraftCollector(object):
             self.rcon.connect()
             response = self.rcon.command(command)
 
+        print("rcon command %s got %s" % (command, response))
+
         return response
 
     def get_server_stats(self):
         metrics = []
         if not all(x in os.environ for x in ['RCON_HOST', 'RCON_PASSWORD']):
+            print("RCON_HOST and/or RCON_password are not defined."
+                  "\nServer stats not available.")
             return []
         dim_tps = Metric('dim_tps', 'TPS of a dimension', "counter")
         dim_ticktime = Metric('dim_ticktime', "Time a Tick took in a Dimension", "counter")
@@ -151,14 +155,30 @@ class MinecraftCollector(object):
         data["stat.Health"] = nbtfile.get("Health").value
         data["stat.foodLevel"] = nbtfile.get("foodLevel").value
         with open(self.advancementsdirectory + "/" + uuid + ".json") as json_file:
+            recipe_count = 0
+            story_count = 0
+            adventure_count = 0
             count = 0
+
             advancements = json.load(json_file)
             for key, value in advancements.items():
-                if key in "DataVersion":
+                if key == "DataVersion":
+                    print(key)
                     continue
-                if value["done"] is True:
-                    count += 1
-        data["stat.advancements"] = count
+
+                if "adventure" in key and value.get("done", False) is True:
+                    adventure_count += 1
+                elif "story" in key and value.get("done", False) is True:
+                    story_count += 1
+                elif "recipe" in key and value.get("done", False) is True:
+                    recipe_count += 1
+                else:
+                    if value["done"] is True:
+                        count += 1
+        data["stat.adventure"] = adventure_count
+        data["stat.story"] = story_count
+        data["stat.recipe"] = recipe_count
+        data["stat.other"] = count
         if self.questsEnabled:
             data["stat.questsFinished"] = self.get_player_quests_finished(uuid)
         return data
@@ -278,6 +298,8 @@ class MinecraftCollector(object):
             if "minecraft:killed_by" in data["stats"]:
                 for entity, value in data["stats"]["minecraft:killed_by"].items():
                     player_deaths.add_sample('player_deaths', value=value, labels={'player': name, 'cause': entity})
+
+            # Grab the custom stats
             for stat, value in data["stats"]["minecraft:custom"].items():
                 if stat == "minecraft:jump":
                     player_jumps.add_sample("player_jumps", value=value, labels={'player': name})
