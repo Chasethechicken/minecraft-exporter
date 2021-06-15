@@ -1,4 +1,5 @@
-from prometheus_client import start_http_server, REGISTRY, Metric
+from prometheus_client import start_http_server
+from prometheus_client.core import REGISTRY, Metric
 import time
 import requests
 import json
@@ -9,6 +10,8 @@ import schedule
 from mcrcon import MCRcon
 from os import listdir
 from os.path import isfile, join
+
+
 class MinecraftCollector(object):
     def __init__(self):
         self.statsdirectory = "/world/stats"
@@ -30,7 +33,7 @@ class MinecraftCollector(object):
         self.map = dict()
         return
 
-    def uuid_to_player(self,uuid):
+    def uuid_to_player(self, uuid):
         uuid = uuid.replace('-','')
         if uuid in self.map:
             return self.map[uuid]
@@ -150,9 +153,10 @@ class MinecraftCollector(object):
             data["stat.questsFinished"] = self.get_player_quests_finished(uuid)
         return data
 
-    def update_metrics_for_player(self,uuid):
+    def update_metrics_for_player(self, uuid):
         name = self.uuid_to_player(uuid)
-        if not name: return
+        if not name:
+            return
 
         data = self.get_player_stats(uuid)
 
@@ -294,7 +298,8 @@ class MinecraftCollector(object):
     def collect(self):
         for player in self.get_players():
             metrics = self.update_metrics_for_player(player)
-            if not metrics: continue
+            if not metrics:
+                continue
 
             for metric in metrics:
                 yield metric
@@ -302,9 +307,10 @@ class MinecraftCollector(object):
         for metric in self.get_server_stats():
             yield metric
 
+
 if __name__ == '__main__':
     if all(x in os.environ for x in ['RCON_HOST','RCON_PASSWORD']):
-        print("RCON is enabled for "+ os.environ['RCON_HOST'])
+        print("RCON is enabled for " + os.environ['RCON_HOST'])
 
     start_http_server(8000)
     REGISTRY.register(MinecraftCollector())
