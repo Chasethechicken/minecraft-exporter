@@ -1,3 +1,4 @@
+# noinspection PyProtectedMember
 from prometheus_client import start_http_server
 from prometheus_client.core import REGISTRY, Metric
 import time
@@ -8,7 +9,6 @@ import nbt
 import re
 import os
 import schedule
-from logging.handlers import RotatingFileHandler
 from mcrcon import MCRcon
 from os import listdir
 from os.path import isfile, join
@@ -34,33 +34,31 @@ class MinecraftCollector(object):
         self.logger = logging.getLogger(__name__)
 
         world_directory = os.environ.get("WORLD_DIR", "/world")
-        self.statsdirectory = "%s/stats" % world_directory
-        self.playerdirectory = "%s/playerdata" % world_directory
-        self.advancementsdirectory = "%s/advancements" % world_directory
-        self.betterquesting = "%s/betterquesting" % world_directory
-        self.map = dict()
-        self.questsEnabled = False
+        self.stats_directory = "%s/stats" % world_directory
+        self.player_directory = "%s/playerdata" % world_directory
+        self.advancements_directory = "%s/advancements" % world_directory
+
+        self.uuid_name_map = dict()
         self.rcon = None
-        if os.path.isdir(self.betterquesting):
-            self.questsEnabled = True
+
         schedule.every().day.at("01:00").do(self.flush_playernamecache)
 
     def get_players(self):
-        return [f[:-5] for f in listdir(self.statsdirectory) if isfile(join(self.statsdirectory, f))]
+        return [f[:-5] for f in listdir(self.stats_directory) if isfile(join(self.stats_directory, f))]
 
     def flush_playernamecache(self):
         self.logger.info("flushing playername cache")
-        self.map = dict()
+        self.uuid_name_map = dict()
         return
 
     def uuid_to_player(self, uuid):
         uuid = uuid.replace('-', '')
-        if uuid in self.map:
-            return self.map[uuid]
+        if uuid in self.uuid_name_map:
+            return self.uuid_name_map[uuid]
         else:
             try:
                 result = requests.get('https://api.mojang.com/user/profiles/' + uuid + '/names')
-                self.map[uuid] = result.json()[-1]['name']
+                self.uuid_name_map[uuid] = result.json()[-1]['name']
                 return result.json()[-1]['name']
             except:
                 return
@@ -154,28 +152,17 @@ class MinecraftCollector(object):
 
         return metrics
 
-    def get_player_quests_finished(self, uuid):
-        with open(self.betterquesting + "/QuestProgress.json") as json_file:
-            data = json.load(json_file)
-            json_file.close()
-        counter = 0
-        for _, value in data['questProgress:9'].items():
-            for _, u in value['tasks:9']['0:10']['completeUsers:9'].items():
-                if u == uuid:
-                    counter += 1
-        return counter
-
     def get_player_stats(self, uuid):
-        with open(self.statsdirectory + "/" + uuid + ".json") as json_file:
+        with open(self.stats_directory + "/" + uuid + ".json") as json_file:
             data = json.load(json_file)
             json_file.close()
-        nbtfile = nbt.nbt.NBTFile(self.playerdirectory + "/" + uuid + ".dat", 'rb')
+        nbtfile = nbt.nbt.NBTFile(self.player_directory + "/" + uuid + ".dat", 'rb')
         data["stat.XpTotal"] = nbtfile.get("XpTotal").value
         data["stat.XpLevel"] = nbtfile.get("XpLevel").value
         data["stat.Score"] = nbtfile.get("Score").value
         data["stat.Health"] = nbtfile.get("Health").value
         data["stat.foodLevel"] = nbtfile.get("foodLevel").value
-        with open(self.advancementsdirectory + "/" + uuid + ".json") as json_file:
+        with open(self.advancements_directory + "/" + uuid + ".json") as json_file:
             recipe_count = 0
             story_count = 0
             adventure_count = 0
@@ -200,8 +187,7 @@ class MinecraftCollector(object):
         data["stat.story"] = story_count
         data["stat.recipe"] = recipe_count
         data["stat.other"] = count
-        if self.questsEnabled:
-            data["stat.questsFinished"] = self.get_player_quests_finished(uuid)
+
         return data
 
     def update_metrics_for_player(self, uuid):
@@ -228,7 +214,6 @@ class MinecraftCollector(object):
         player_playtime = Metric('player_playtime', "Time in Minutes a Player was online", "counter")
         player_advancements = Metric('player_advancements', "Number of completed advances of a player", "counter")
         player_slept = Metric('player_slept', "Times a Player slept in a bed", "counter")
-        player_quests_finished = Metric('player_quests_finished', 'Number of quests a Player has finished', 'counter')
         player_used_crafting_table = Metric('player_used_crafting_table', "Times a Player used a Crafting Table",
                                             "counter")
         mc_custom = Metric('mc_custom', "Custom Minecraft stat", "counter")
@@ -298,8 +283,6 @@ class MinecraftCollector(object):
             elif stat == "craftingTableInteraction":
                 player_used_crafting_table.add_sample('player_used_crafting_table', value=value,
                                                       labels={'player': name})
-            elif stat == "questsFinished":
-                player_quests_finished.add_sample('player_quests_finished', value=value, labels={'player': name})
 
         if "stats" in data:  # Minecraft > 1.15
             if "minecraft:crafted" in data["stats"]:
@@ -360,7 +343,7 @@ class MinecraftCollector(object):
         return [blocks_mined, blocks_picked_up, player_deaths, player_jumps, cm_traveled, player_xp_total,
                 player_current_level, player_food_level, player_health, player_score, entities_killed, damage_taken,
                 damage_dealt, blocks_crafted, player_playtime, player_advancements, player_slept,
-                player_used_crafting_table, player_quests_finished, mc_custom]
+                player_used_crafting_table, mc_custom]
 
     def collect(self):
         for player in self.get_players():
