@@ -27,6 +27,8 @@ formatter = logging.Formatter(
 ch.setFormatter(formatter)
 m_logger.addHandler(ch)
 
+MOJANG_API_NAMES_URL = "https://api.mojang.com/user/profiles/%s/names"
+
 
 class MinecraftCollector(object):
     def __init__(self):
@@ -52,16 +54,40 @@ class MinecraftCollector(object):
         return
 
     def uuid_to_player(self, uuid):
-        uuid = uuid.replace('-', '')
+        result = uuid
         if uuid in self.uuid_name_map:
-            return self.uuid_name_map[uuid]
+            result = self.uuid_name_map[uuid]
+            self.logger.debug(
+                "Got %s as username for %s from local cache." % (uuid, result)
+            )
         else:
-            try:
-                result = requests.get('https://api.mojang.com/user/profiles/' + uuid + '/names')
-                self.uuid_name_map[uuid] = result.json()[-1]['name']
-                return result.json()[-1]['name']
-            except:
-                return
+            response = requests.get(MOJANG_API_NAMES_URL % uuid)
+
+            if response.status_code == 200:
+                # noinspection PyBroadException
+                try:
+                    history = result.json()
+                    for change in history:
+                        if 'changedToAt' not in change and 'name' in change:
+                            self.uuid_name_map[uuid] = change['name']
+                            result = change['name']
+                            break
+                except Exception:
+                    self.logger.exception(
+                        "Parsing of Mojang API response failed.")
+
+                self.logger.debug(
+                    "Got %s as username for %s from Mojang API."
+                    % (uuid, result))
+            else:
+                self.logger.error(
+                    "UUID lookup failed for %s.\n"
+                    "API returned %i - %s." % (
+                        uuid, response.status_code, response.text)
+                )
+                self.logger.warning("Using UUID instead of username.")
+
+        return result
 
     def rcon_command(self, command):
         if self.rcon is None:
