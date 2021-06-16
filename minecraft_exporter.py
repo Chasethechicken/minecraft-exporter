@@ -3,10 +3,12 @@ from prometheus_client.core import REGISTRY, Metric
 import time
 import requests
 import json
+import logging
 import nbt
 import re
 import os
 import schedule
+from logging.handlers import RotatingFileHandler
 from mcrcon import MCRcon
 from os import listdir
 from os.path import isfile, join
@@ -14,6 +16,14 @@ from os.path import isfile, join
 
 class MinecraftCollector(object):
     def __init__(self):
+        # Can move this around or add handlers as needed
+        self.logger = logging.getLogger('MinecraftCollector')
+        ch = logging.StreamHandler()
+        env_level = os.environ.get('LOG_LEVEL', "INFO")
+        level = logging.getLevelName(env_level)
+        ch.setLevel(level)
+        self.logger.addHandler(ch)
+
         world_directory = os.environ.get("WORLD_DIR", "/world")
         self.statsdirectory = "%s/stats" % world_directory
         self.playerdirectory = "%s/playerdata" % world_directory
@@ -30,7 +40,7 @@ class MinecraftCollector(object):
         return [f[:-5] for f in listdir(self.statsdirectory) if isfile(join(self.statsdirectory, f))]
 
     def flush_playernamecache(self):
-        print("flushing playername cache")
+        self.logger.info("flushing playername cache")
         self.map = dict()
         return
 
@@ -53,19 +63,21 @@ class MinecraftCollector(object):
         try:
             response = self.rcon.command(command)
         except BrokenPipeError:
-            print("Lost RCON Connection, trying to reconnect")
+            self.logger.error("Lost RCON Connection, trying to reconnect")
             self.rcon.connect()
             response = self.rcon.command(command)
 
-        print("rcon command %s got %s" % (command, response))
+        self.logger.info("rcon command %s got %s" % (command, response))
 
         return response
 
     def get_server_stats(self):
         metrics = []
         if not all(x in os.environ for x in ['RCON_HOST', 'RCON_PASSWORD']):
-            print("RCON_HOST and/or RCON_password are not defined."
-                  "\nServer stats not available.")
+            self.logger.warning(
+                "RCON_HOST and/or RCON_password are not defined."
+                "\nServer stats not available."
+            )
             return []
         dim_tps = Metric('dim_tps', 'TPS of a dimension', "counter")
         dim_ticktime = Metric('dim_ticktime', "Time a Tick took in a Dimension", "counter")
@@ -163,7 +175,7 @@ class MinecraftCollector(object):
             advancements = json.load(json_file)
             for key, value in advancements.items():
                 if key == "DataVersion":
-                    print(key)
+                    self.logger.debug(key)
                     continue
 
                 if "adventure" in key and value.get("done", False) is True:
@@ -355,12 +367,13 @@ class MinecraftCollector(object):
 
 
 if __name__ == '__main__':
+    logger = logging.getLogger('MinecraftCollector')
     if all(x in os.environ for x in ['RCON_HOST', 'RCON_PASSWORD']):
-        print("RCON is enabled for " + os.environ['RCON_HOST'])
+        logger.info("RCON is enabled for " + os.environ['RCON_HOST'])
 
     start_http_server(8000)
     REGISTRY.register(MinecraftCollector())
-    print("Exporter started on Port 8000")
+    logger.info("Exporter started on Port 8000")
     while True:
         time.sleep(1)
         schedule.run_pending()
