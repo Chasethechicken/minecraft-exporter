@@ -13,16 +13,25 @@ from mcrcon import MCRcon
 from os import listdir
 from os.path import isfile, join
 
+# Can move this around or add handlers as needed
+m_logger = logging.getLogger(__name__)
+env_level = os.environ.get('LOG_LEVEL', "INFO")
+level = logging.getLevelName(env_level)
+m_logger.setLevel(level)
+ch = logging.StreamHandler()
+ch.setLevel(level)
+formatter = logging.Formatter(
+    fmt='time=%(created)f level=%(levelname)s ' 
+    'method=%(funcName)s:%(lineno)s msg="%(message)s"',
+    datefmt='%d-%b-%Y %H:%M:%S %z %Z')
+ch.setFormatter(formatter)
+m_logger.addHandler(ch)
+
 
 class MinecraftCollector(object):
     def __init__(self):
         # Can move this around or add handlers as needed
-        self.logger = logging.getLogger('MinecraftCollector')
-        ch = logging.StreamHandler()
-        env_level = os.environ.get('LOG_LEVEL', "INFO")
-        level = logging.getLevelName(env_level)
-        ch.setLevel(level)
-        self.logger.addHandler(ch)
+        self.logger = logging.getLogger(__name__)
 
         world_directory = os.environ.get("WORLD_DIR", "/world")
         self.statsdirectory = "%s/stats" % world_directory
@@ -367,7 +376,9 @@ class MinecraftCollector(object):
 
 
 if __name__ == '__main__':
-    logger = logging.getLogger('MinecraftCollector')
+    logger = logging.getLogger(__name__)
+
+    logger.info("Starting up")
     if all(x in os.environ for x in ['RCON_HOST', 'RCON_PASSWORD']):
         logger.info("RCON is enabled for " + os.environ['RCON_HOST'])
 
