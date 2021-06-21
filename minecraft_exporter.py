@@ -1,6 +1,6 @@
 # noinspection PyProtectedMember
 from prometheus_client import start_http_server
-from prometheus_client.core import REGISTRY, Metric, \
+from prometheus_client.core import REGISTRY, \
     GaugeMetricFamily, CounterMetricFamily
 import time
 import requests
@@ -113,8 +113,10 @@ class MinecraftCollector(object):
                 "\nServer stats not available."
             )
             return []
-        player_online = Metric(
-            'player_online', "is 1 if player is online", "counter")
+        player_online = GaugeMetricFamily(
+            'player_online',
+            "The value is 1 if player is online, missing if not.",
+            labels=['player'])
 
         metrics.append(player_online)
 
@@ -124,10 +126,7 @@ class MinecraftCollector(object):
         if player_regex.findall(resp):
             for player in player_regex.findall(resp)[0].split(","):
                 if not player.isspace():
-                    player_online.add_sample(
-                        'player_online', value=1,
-                        labels={'player': player.lstrip()}
-                    )
+                    player_online.add_metric([player.lstrip()], 1)
 
         return metrics
 
@@ -480,7 +479,7 @@ class MinecraftCollector(object):
         for uuid in self.get_players():
             name = self.uuid_to_player(uuid)  # if this fails we use the UUID
 
-            # Apparently if you yield in a sub call it doesn't work
+            # TODO fix this so all the yields happen elsewhere
             metrics = self.get_player_advancements(uuid, name)
             for metric in metrics:
                 yield metric
