@@ -1,6 +1,7 @@
 # noinspection PyProtectedMember
 from prometheus_client import start_http_server
-from prometheus_client.core import REGISTRY, Metric
+from prometheus_client.core import REGISTRY, Metric, \
+    GaugeMetricFamily, CounterMetricFamily
 import time
 import requests
 import json
@@ -66,7 +67,7 @@ class MinecraftCollector(object):
             if response.status_code == 200:
                 # noinspection PyBroadException
                 try:
-                    history = result.json()
+                    history = response.json()
                     for change in history:
                         if 'changedToAt' not in change and 'name' in change:
                             self.uuid_name_map[uuid] = change['name']
@@ -112,274 +113,387 @@ class MinecraftCollector(object):
                 "\nServer stats not available."
             )
             return []
-        dim_tps = Metric('dim_tps', 'TPS of a dimension', "counter")
-        dim_ticktime = Metric('dim_ticktime', "Time a Tick took in a Dimension", "counter")
-        overall_tps = Metric('overall_tps', 'overall TPS', "counter")
-        overall_ticktime = Metric('overall_ticktime', "overall Ticktime", "counter")
-        player_online = Metric('player_online', "is 1 if player is online", "counter")
-        entities = Metric('entities', "type and count of active entites", "counter")
+        player_online = Metric(
+            'player_online', "is 1 if player is online", "counter")
 
-        metrics.extend([dim_tps, dim_ticktime, overall_tps, overall_ticktime, player_online, entities])
-
-        if 'FORGE_SERVER' in os.environ and os.environ['FORGE_SERVER'] == "True":
-            # dimensions
-            resp = self.rcon_command("forge tps")
-            dimtpsregex = re.compile("Dim\s*(-*\d*)\s\((.*?)\)\s:\sMean tick time:\s(.*?) ms\. Mean TPS: (\d*\.\d*)")
-            for dimid, dimname, meanticktime, meantps in dimtpsregex.findall(resp):
-                dim_tps.add_sample('dim_tps', value=meantps, labels={'dimension_id': dimid, 'dimension_name': dimname})
-                dim_ticktime.add_sample('dim_ticktime', value=meanticktime,
-                                        labels={'dimension_id': dimid, 'dimension_name': dimname})
-            overallregex = re.compile("Overall\s?: Mean tick time: (.*) ms. Mean TPS: (.*)")
-            overall_tps.add_sample('overall_tps', value=overallregex.findall(resp)[0][1], labels={})
-            overall_ticktime.add_sample('overall_ticktime', value=overallregex.findall(resp)[0][0], labels={})
-
-            # entites
-            resp = self.rcon_command("forge entity list")
-            entityregex = re.compile("(\d+): (.*?:.*?)\s")
-            for entitycount, entityname in entityregex.findall(resp):
-                entities.add_sample('entities', value=entitycount, labels={'entity': entityname})
-
-        # dynmap
-        if 'DYNMAP_ENABLED' in os.environ and os.environ['DYNMAP_ENABLED'] == "True":
-            dynmap_tile_render_statistics = Metric('dynmap_tile_render_statistics',
-                                                   'Tile Render Statistics reported by Dynmap', "counter")
-            dynmap_chunk_loading_statistics_count = Metric('dynmap_chunk_loading_statistics_count',
-                                                           'Chunk Loading Statistics reported by Dynmap', "counter")
-            dynmap_chunk_loading_statistics_duration = Metric('dynmap_chunk_loading_statistics_duration',
-                                                              'Chunk Loading Statistics reported by Dynmap', "counter")
-            metrics.extend([dynmap_tile_render_statistics, dynmap_chunk_loading_statistics_count,
-                            dynmap_chunk_loading_statistics_duration])
-
-            resp = self.rcon_command("dynmap stats")
-
-            dynmaptilerenderregex = re.compile("  (.*?): processed=(\d*), rendered=(\d*), updated=(\d*)")
-            for dim, processed, rendered, updated in dynmaptilerenderregex.findall(resp):
-                dynmap_tile_render_statistics.add_sample('dynmap_tile_render_statistics', value=processed,
-                                                         labels={'type': 'processed', 'file': dim})
-                dynmap_tile_render_statistics.add_sample('dynmap_tile_render_statistics', value=rendered,
-                                                         labels={'type': 'rendered', 'file': dim})
-                dynmap_tile_render_statistics.add_sample('dynmap_tile_render_statistics', value=updated,
-                                                         labels={'type': 'updated', 'file': dim})
-
-            dynmapchunkloadingregex = re.compile("Chunks processed: (.*?): count=(\d*), (\d*.\d*)")
-            for state, count, duration_per_chunk in dynmapchunkloadingregex.findall(resp):
-                dynmap_chunk_loading_statistics_count.add_sample('dynmap_chunk_loading_statistics', value=count,
-                                                                 labels={'type': state})
-                dynmap_chunk_loading_statistics_duration.add_sample('dynmap_chunk_loading_duration',
-                                                                    value=duration_per_chunk, labels={'type': state})
+        metrics.append(player_online)
 
         # player
         resp = self.rcon_command("list")
-        playerregex = re.compile("players online:(.*)")
-        if playerregex.findall(resp):
-            for player in playerregex.findall(resp)[0].split(","):
+        player_regex = re.compile("players online:(.*)")
+        if player_regex.findall(resp):
+            for player in player_regex.findall(resp)[0].split(","):
                 if not player.isspace():
-                    player_online.add_sample('player_online', value=1, labels={'player': player.lstrip()})
+                    player_online.add_sample(
+                        'player_online', value=1,
+                        labels={'player': player.lstrip()}
+                    )
 
         return metrics
 
-    def get_player_stats(self, uuid):
-        with open(self.stats_directory + "/" + uuid + ".json") as json_file:
+    def get_player_advancements(self, uuid, name):
+        result = []
+        print("get_player_advancements")
+
+        data_version_metric = CounterMetricFamily(
+            'minecraft_advancement_data_version',
+            "The data version of the advancements file",
+            labels=['player'])
+        # aka minecraft
+        story_metric = CounterMetricFamily(
+            'minecraft_advancement_story_count',
+            "The count of completed story advancements.",
+            labels=['player'])
+        nether_metric = CounterMetricFamily(
+            'minecraft_advancement_nether_count',
+            "The count of completed nether advancements.",
+            labels=['player'])
+        end_metric = CounterMetricFamily(
+            'minecraft_advancement_end_count',
+            "The count of completed end advancements.",
+            labels=['player'])
+        adventure_metric = CounterMetricFamily(
+            'minecraft_advancement_adventure_count',
+            "The count of completed adventure advancements.",
+            labels=['player'])
+        husbandry_metric = CounterMetricFamily(
+            'minecraft_advancement_husbandry_count',
+            "The count of completed husbandry advancements.",
+            labels=['player'])
+        recipe_metric = CounterMetricFamily(
+            'minecraft_advancement_recipe_count',
+            "The count of completed recipe advancements.",
+            labels=['player'])
+        other_metric = CounterMetricFamily(
+            'minecraft_advancement_other_count',
+            "The count of completed other advancements.",
+            labels=['player'])
+
+        advancements_file_path = os.path.join(
+            self.advancements_directory, uuid + ".json")
+
+        if not isfile(advancements_file_path):
+            self.logger.warning("No advancements for player %s." % uuid)
+        else:
+            with open(advancements_file_path) as json_file:
+                data_version = 0
+                story_count = 0
+                nether_count = 0
+                the_end_count = 0
+                adventure_count = 0
+                husbandry_count = 0
+                recipe_count = 0
+                unknown_count = 0
+
+                advancements = json.load(json_file)
+                for key, value in advancements.items():
+                    if key == "DataVersion":
+                        data_version = value
+                        continue
+
+                    if "story" in key and value.get("done", False) is True:
+                        story_count += 1
+                    elif "nether" in key and value.get("done", False) is True:
+                        nether_count += 1
+                    elif "end" in key and value.get("done", False) is True:
+                        the_end_count += 1
+                    elif "adventure" in key and value.get("done", False) is True:
+                        adventure_count += 1
+                    elif "husbandry" in key and value.get("done", False) is True:
+                        husbandry_count += 1
+                    elif "recipe" in key and value.get("done", False) is True:
+                        recipe_count += 1
+                    else:
+                        if value["done"] is True:
+                            unknown_count += 1
+
+            data_version_metric.add_metric([name], data_version)
+            result.append(data_version_metric)
+
+            story_metric.add_metric([name], story_count)
+            result.append(story_metric)
+
+            nether_metric.add_metric([name], nether_count)
+            result.append(nether_metric)
+
+            end_metric.add_metric([name], the_end_count)
+            result.append(end_metric)
+
+            adventure_metric.add_metric([name], adventure_count)
+            result.append(adventure_metric)
+
+            husbandry_metric.add_metric([name], husbandry_count)
+            result.append(husbandry_metric)
+
+            recipe_metric.add_metric([name], recipe_count)
+            result.append(recipe_metric)
+
+            other_metric.add_metric([name], unknown_count)
+            result.append(other_metric)
+
+        return result
+
+    def get_player_data(self, uuid, name):
+        result = []
+        print("get_player_data")
+
+        #  TODO double check that score resets on death in server
+        player_score = GaugeMetricFamily(
+            'player_score',
+            "The score of a player.", labels=['player'])
+        player_xp_total = GaugeMetricFamily(
+            'player_xp_total',
+            "The total amount of XP the player has collected over time;"
+            " used for the Score upon death.", labels=['player'])
+        player_current_level = GaugeMetricFamily(
+            'player_current_level',
+            "The level shown on the XP bar.",
+            labels=['player'])
+        player_health = GaugeMetricFamily(
+            'player_health',
+            "How much Health the player currently has",
+            labels=['player'])
+        player_food_level = GaugeMetricFamily(
+            'player_food_level',
+            "The value of the hunger bar; 20 is full.",
+            labels=['player'])
+        player_food_saturation_level = GaugeMetricFamily(
+            'player_food_saturation_level',
+            "The food saturation the player currently has.",
+            labels=['player'])
+        player_food_exhaustion_level = GaugeMetricFamily(
+            'player_food_exhaustion_level',
+            "The food exhaustion the player currently has.",
+            labels=['player'])
+        player_game_type = GaugeMetricFamily(
+            'player_game_type',
+            "The game mode of the player."
+            " 0 is Survival, 1 is Creative,"
+            " 2 is Adventure and 3 is Spectator.",
+            labels=['player'])
+        player_dimension = GaugeMetricFamily(
+            'player_dimension',
+            "A namespaced ID of the dimension the player is in.",
+            labels=['player', 'dimension'])
+
+        player_data_file_path = os.path.join(
+            self.player_directory, uuid + ".dat")
+
+        if not isfile(player_data_file_path):
+            self.logger.error("No player data for player %s." % uuid)
+        else:
+            nbtfile = nbt.nbt.NBTFile(player_data_file_path, 'rb')
+
+            player_score.add_metric([name], nbtfile.get("Score").value)
+            result.append(player_score)
+
+            player_xp_total.add_metric([name], nbtfile.get("XpTotal").value)
+            result.append(player_xp_total)
+
+            player_current_level.add_metric(
+                [name], nbtfile.get("XpLevel").value)
+            result.append(player_current_level)
+
+            player_health.add_metric([name], nbtfile.get("Health").value)
+            result.append(player_health)
+
+            player_food_level.add_metric(
+                [name], nbtfile.get("foodLevel").value)
+            result.append(player_food_level)
+
+            player_food_saturation_level.add_metric(
+                [name], nbtfile.get("foodSaturationLevel").value)
+            result.append(player_food_saturation_level)
+
+            player_food_exhaustion_level.add_metric(
+                [name], nbtfile.get("foodExhaustionLevel").value)
+            result.append(player_food_exhaustion_level)
+
+            player_game_type.add_metric(
+                [name], nbtfile.get("playerGameType").value)
+            result.append(player_game_type)
+
+            player_dimension.add_metric(
+                [name, nbtfile.get("Dimension").value], 1)
+            result.append(player_dimension)
+
+        return result
+
+    def get_player_stats(self, uuid, name):
+        result = []
+        print("get_player_stats")
+        # Define a metric for each category of stat
+        # https://minecraft.fandom.com/wiki/Statistics#Statistic_types_and_names
+        blocks_mined = CounterMetricFamily(
+            'blocks_mined',
+            'The count of blocks a player mined by block type.',
+            labels=['player', 'block'])
+        items_broken = CounterMetricFamily(
+            'items_broken',
+            'The count of items a player has used to negative durability.',
+            labels=['player', 'item'])
+        items_crafted = CounterMetricFamily(
+            'items_mined',
+            'The count of items a player has crafted, smelted, etc.',
+            labels=['player', 'item'])
+        items_used = CounterMetricFamily(
+            'items_used',
+            'The count of blocks or items a player used.',
+            labels=['player', 'item'])
+        items_picked_up = CounterMetricFamily(
+            'items_picked_up',
+            'The count of items a player picked up.',
+            labels=['player', 'item'])
+        items_dropped = CounterMetricFamily(
+            'items_dropped',
+            'The count of items a player has dropped.',
+            labels=['player', 'item'])
+        entities_killed = CounterMetricFamily(
+            'entities_killed',
+            "The count of entities killed by a player.",
+            labels=['player', 'entity'])
+        entities_killed_by = CounterMetricFamily(
+            'entities_killed_by',
+            "The count of entities that killed a player",
+            labels=['player', 'entity'])
+
+        mc_custom = CounterMetricFamily(
+            'mc_custom', "Custom Minecraft stat",
+            labels=['player', 'custom_stat'])
+
+        # Let's break out some sub-categories from the
+        # custom stats to avoid high label cardinality (where we can)
+        minecraft_distance_traveled_cm = CounterMetricFamily(
+            'minecraft_distance_traveled_cm',
+            "The total distance traveled by method of transportation.",
+            labels=['player', 'method'])
+
+        minecraft_interactions_total = CounterMetricFamily(
+            'minecraft_interactions_total',
+            "The number of times interacted with various workstations.",
+            labels=['player', 'workstation'])
+
+        minecraft_damage_total = CounterMetricFamily(
+            'minecraft_damage_total',
+            "The amount of damage a player has dealt/taken by category.",
+            labels=['player', 'category'])
+
+        player_stats_file_path = os.path.join(
+            self.stats_directory, uuid + ".json")
+
+        if not isfile(player_stats_file_path):
+            self.logger.error("No statistics for player %s." % uuid)
+            return result
+
+        with open(player_stats_file_path) as json_file:
             data = json.load(json_file)
             json_file.close()
-        nbtfile = nbt.nbt.NBTFile(self.player_directory + "/" + uuid + ".dat", 'rb')
-        data["stat.XpTotal"] = nbtfile.get("XpTotal").value
-        data["stat.XpLevel"] = nbtfile.get("XpLevel").value
-        data["stat.Score"] = nbtfile.get("Score").value
-        data["stat.Health"] = nbtfile.get("Health").value
-        data["stat.foodLevel"] = nbtfile.get("foodLevel").value
-        with open(self.advancements_directory + "/" + uuid + ".json") as json_file:
-            recipe_count = 0
-            story_count = 0
-            adventure_count = 0
-            count = 0
 
-            advancements = json.load(json_file)
-            for key, value in advancements.items():
-                if key == "DataVersion":
-                    self.logger.debug(key)
-                    continue
+        # I can't think of a reason why I'd ever play an older version
+        # hence removal of pre 1.15 code block.
+        if "stats" not in data:
+            self.logger.error(
+                "No stats key in file %s." % player_stats_file_path)
+        else:
+            stats = data["stats"]
 
-                if "adventure" in key and value.get("done", False) is True:
-                    adventure_count += 1
-                elif "story" in key and value.get("done", False) is True:
-                    story_count += 1
-                elif "recipe" in key and value.get("done", False) is True:
-                    recipe_count += 1
-                else:
-                    if value["done"] is True:
-                        count += 1
-        data["stat.adventure"] = adventure_count
-        data["stat.story"] = story_count
-        data["stat.recipe"] = recipe_count
-        data["stat.other"] = count
+            if "minecraft:mined" in stats:
+                for block, value in stats["minecraft:mined"].items():
+                    blocks_mined.add_sample(
+                        "blocks_mined", value=value,
+                        labels={'player': name, 'block': block})
+                result.append(blocks_mined)
 
-        return data
+            if "minecraft:broken" in stats:
+                for item, value in stats["minecraft:broken"].items():
+                    items_broken.add_sample(
+                        "items_broken", value=value,
+                        labels={'player': name, 'item': item})
+                result.append(items_broken)
 
-    def update_metrics_for_player(self, uuid):
-        name = self.uuid_to_player(uuid)
-        if not name:
-            return
+            if "minecraft:crafted" in stats:
+                for item, value in stats["minecraft:crafted"].items():
+                    items_crafted.add_sample(
+                        "items_crafted", value=value,
+                        labels={'player': name, 'item': item})
+                result.append(items_crafted)
 
-        data = self.get_player_stats(uuid)
+            if "minecraft:used" in stats:
+                for item, value in stats["minecraft:used"].items():
+                    items_used.add_sample(
+                        "items_used", value=value,
+                        labels={'player': name, 'item': item})
+                result.append(items_used)
 
-        blocks_mined = Metric('blocks_mined', 'Blocks a Player mined', "counter")
-        blocks_picked_up = Metric('blocks_picked_up', 'Blocks a Player picked up', "counter")
-        player_deaths = Metric('player_deaths', 'How often a Player died', "counter")
-        player_jumps = Metric('player_jumps', 'How often a Player has jumped', "counter")
-        cm_traveled = Metric('cm_traveled', 'How many cm a Player traveled, whatever that means', "counter")
-        player_xp_total = Metric('player_xp_total', "How much total XP a player has", "counter")
-        player_current_level = Metric('player_current_level', "How much current XP a player has", "counter")
-        player_food_level = Metric('player_food_level', "How much food the player currently has", "counter")
-        player_health = Metric('player_health', "How much Health the player currently has", "counter")
-        player_score = Metric('player_score', "The Score of the player", "counter")
-        entities_killed = Metric('entities_killed', "Entities killed by player", "counter")
-        damage_taken = Metric('damage_taken', "Damage Taken by Player", "counter")
-        damage_dealt = Metric('damage_dealt', "Damage dealt by Player", "counter")
-        blocks_crafted = Metric('blocks_crafted', "Items a Player crafted", "counter")
-        player_playtime = Metric('player_playtime', "Time in Minutes a Player was online", "counter")
-        player_advancements = Metric('player_advancements', "Number of completed advances of a player", "counter")
-        player_slept = Metric('player_slept', "Times a Player slept in a bed", "counter")
-        player_used_crafting_table = Metric('player_used_crafting_table', "Times a Player used a Crafting Table",
-                                            "counter")
-        mc_custom = Metric('mc_custom', "Custom Minecraft stat", "counter")
-        for key, value in data.items():  # pre 1.15
-            if key in ("stats", "DataVersion"):
-                continue
-            stat = key.split(".")[1]  # entityKilledBy
-            if stat == "mineBlock":
-                blocks_mined.add_sample("blocks_mined", value=value, labels={'player': name, 'block': '.'.join(
-                    (key.split(".")[2], key.split(".")[3]))})
-            elif stat == "pickup":
-                blocks_picked_up.add_sample("blocks_picked_up", value=value, labels={'player': name, 'block': '.'.join(
-                    (key.split(".")[2], key.split(".")[3]))})
-            elif stat == "entityKilledBy":
-                if len(key.split(".")) == 4:
-                    player_deaths.add_sample('player_deaths', value=value, labels={'player': name, 'cause': '.'.join(
-                        (key.split(".")[2], key.split(".")[3]))})
-                else:
-                    player_deaths.add_sample('player_deaths', value=value,
-                                             labels={'player': name, 'cause': key.split(".")[2]})
-            elif stat == "jump":
-                player_jumps.add_sample("player_jumps", value=value, labels={'player': name})
-            elif stat == "walkOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "walking"})
-            elif stat == "swimOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "swimming"})
-            elif stat == "sprintOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "sprinting"})
-            elif stat == "diveOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "diving"})
-            elif stat == "fallOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "falling"})
-            elif stat == "flyOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "flying"})
-            elif stat == "boatOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "boat"})
-            elif stat == "horseOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "horse"})
-            elif stat == "climbOneCm":
-                cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "climbing"})
-            elif stat == "XpTotal":
-                player_xp_total.add_sample('player_xp_total', value=value, labels={'player': name})
-            elif stat == "XpLevel":
-                player_current_level.add_sample('player_current_level', value=value, labels={'player': name})
-            elif stat == "foodLevel":
-                player_food_level.add_sample('player_food_level', value=value, labels={'player': name})
-            elif stat == "Health":
-                player_health.add_sample('player_health', value=value, labels={'player': name})
-            elif stat == "Score":
-                player_score.add_sample('player_score', value=value, labels={'player': name})
-            elif stat == "killEntity":
-                entities_killed.add_sample('entities_killed', value=value,
-                                           labels={'player': name, "entity": key.split(".")[2]})
-            elif stat == "damageDealt":
-                damage_dealt.add_sample('damage_dealt', value=value, labels={'player': name})
-            elif stat == "damageTaken":
-                damage_dealt.add_sample('damage_taken', value=value, labels={'player': name})
-            elif stat == "craftItem":
-                blocks_crafted.add_sample('blocks_crafted', value=value, labels={'player': name, 'block': '.'.join(
-                    (key.split(".")[2], key.split(".")[3]))})
-            elif stat == "playOneMinute":
-                player_playtime.add_sample('player_playtime', value=value, labels={'player': name})
-            elif stat == "advancements":
-                player_advancements.add_sample('player_advancements', value=value, labels={'player': name})
-            elif stat == "sleepInBed":
-                player_slept.add_sample('player_slept', value=value, labels={'player': name})
-            elif stat == "craftingTableInteraction":
-                player_used_crafting_table.add_sample('player_used_crafting_table', value=value,
-                                                      labels={'player': name})
+            if "minecraft:picked_up" in stats:
+                for item, value in stats["minecraft:picked_up"].items():
+                    items_picked_up.add_sample(
+                        "items_picked_up", value=value,
+                        labels={'player': name, 'item': item})
+                result.append(items_picked_up)
 
-        if "stats" in data:  # Minecraft > 1.15
-            if "minecraft:crafted" in data["stats"]:
-                for block, value in data["stats"]["minecraft:crafted"].items():
-                    blocks_crafted.add_sample('blocks_crafted', value=value, labels={'player': name, 'block': block})
-            if "minecraft:mined" in data["stats"]:
-                for block, value in data["stats"]["minecraft:mined"].items():
-                    blocks_mined.add_sample("blocks_mined", value=value, labels={'player': name, 'block': block})
-            if "minecraft:picked_up" in data["stats"]:
-                for block, value in data["stats"]["minecraft:picked_up"].items():
-                    blocks_picked_up.add_sample("blocks_picked_up", value=value,
-                                                labels={'player': name, 'block': block})
-            if "minecraft:killed" in data["stats"]:
-                for entity, value in data["stats"]["minecraft:killed"].items():
-                    entities_killed.add_sample('entities_killed', value=value,
-                                               labels={'player': name, "entity": entity})
-            if "minecraft:killed_by" in data["stats"]:
-                for entity, value in data["stats"]["minecraft:killed_by"].items():
-                    player_deaths.add_sample('player_deaths', value=value, labels={'player': name, 'cause': entity})
+            if "minecraft:items_dropped" in stats:
+                for item, value in stats["minecraft:items_dropped"].items():
+                    items_dropped.add_sample(
+                        "items_dropped", value=value,
+                        labels={'player': name, 'item': item})
+                result.append(items_dropped)
+
+            if "minecraft:killed" in stats:
+                for entity, value in stats["minecraft:killed"].items():
+                    entities_killed.add_sample(
+                        "entities_killed", value=value,
+                        labels={'player': name, 'entity': entity})
+                result.append(entities_killed)
+
+            if "minecraft:killed_by" in stats:
+                for entity, value in stats["minecraft:killed_by"].items():
+                    entities_killed_by.add_sample(
+                        "entities_killed_by", value=value,
+                        labels={'player': name, 'entity': entity})
+                result.append(entities_killed_by)
 
             # Grab the custom stats
-            for stat, value in data["stats"]["minecraft:custom"].items():
-                if stat == "minecraft:jump":
-                    player_jumps.add_sample("player_jumps", value=value, labels={'player': name})
-                elif stat == "minecraft:deaths":
-                    player_deaths.add_sample('player_deaths', value=value, labels={'player': name})
-                elif stat == "minecraft:damage_taken":
-                    damage_taken.add_sample('damage_taken', value=value, labels={'player': name})
-                elif stat == "minecraft:damage_dealt":
-                    damage_dealt.add_sample('damage_dealt', value=value, labels={'player': name})
-                elif stat == "minecraft:play_one_minute":
-                    player_playtime.add_sample('player_playtime', value=value, labels={'player': name})
-                elif stat == "minecraft:walk_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "walking"})
-                elif stat == "minecraft:walk_on_water_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "swimming"})
-                elif stat == "minecraft:sprint_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "sprinting"})
-                elif stat == "minecraft:walk_under_water_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "diving"})
-                elif stat == "minecraft:fall_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "falling"})
-                elif stat == "minecraft:fly_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "flying"})
-                elif stat == "minecraft:boat_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "boat"})
-                elif stat == "minecraft:horse_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "horse"})
-                elif stat == "minecraft:climb_one_cm":
-                    cm_traveled.add_sample("cm_traveled", value=value, labels={'player': name, 'method': "climbing"})
-                elif stat == "minecraft:sleep_in_bed":
-                    player_slept.add_sample('player_slept', value=value, labels={'player': name})
-                elif stat == "minecraft:interact_with_crafting_table":
-                    player_used_crafting_table.add_sample('player_used_crafting_table', value=value,
-                                                          labels={'player': name})
+            for custom_stat, value in stats["minecraft:custom"].items():
+                if custom_stat.endswith("one_cm"):
+                    minecraft_distance_traveled_cm.add_metric(
+                        [name, custom_stat], value)
+                elif custom_stat.startswith("interact"):
+                    minecraft_interactions_total.add_metric(
+                        [name, custom_stat], value
+                    )
+                elif custom_stat.startswith("damage"):
+                    minecraft_damage_total.add_metric(
+                        [name, custom_stat], value
+                    )
                 else:
-                    mc_custom.add_sample('mc_custom', value=value, labels={'stat': stat, 'player': name})
-        return [blocks_mined, blocks_picked_up, player_deaths, player_jumps, cm_traveled, player_xp_total,
-                player_current_level, player_food_level, player_health, player_score, entities_killed, damage_taken,
-                damage_dealt, blocks_crafted, player_playtime, player_advancements, player_slept,
-                player_used_crafting_table, mc_custom]
+                    mc_custom.add_metric([name, custom_stat], value)
+
+            result.append(minecraft_distance_traveled_cm)
+            result.append(minecraft_interactions_total)
+            result.append(minecraft_damage_total)
+            result.append(mc_custom)
+
+        return result
 
     def collect(self):
-        for player in self.get_players():
-            metrics = self.update_metrics_for_player(player)
-            if not metrics:
-                continue
+        for uuid in self.get_players():
+            name = self.uuid_to_player(uuid)  # if this fails we use the UUID
 
+            # Apparently if you yield in a sub call it doesn't work
+            metrics = self.get_player_advancements(uuid, name)
             for metric in metrics:
                 yield metric
 
+            metrics = self.get_player_data(uuid, name)
+            for metric in metrics:
+                yield metric
+
+            metrics = self.get_player_stats(uuid, name)
+            for metric in metrics:
+                yield metric
+
+        # Leave this guy alone for now
         for metric in self.get_server_stats():
             yield metric
 
