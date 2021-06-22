@@ -114,7 +114,7 @@ class MinecraftCollector(object):
             )
             return []
         player_online = GaugeMetricFamily(
-            'player_online',
+            'minecraft_player_online',
             "The value is 1 if player is online, missing if not.",
             labels=['player'])
 
@@ -237,41 +237,42 @@ class MinecraftCollector(object):
         print("get_player_data")
 
         #  TODO double check that score resets on death in server
-        player_score = GaugeMetricFamily(
-            'player_score',
+        minecraft_score = GaugeMetricFamily(
+            'minecraft_score',
             "The score of a player.", labels=['player'])
-        player_xp_total = GaugeMetricFamily(
-            'player_xp_total',
+        # This is still a gauge because it can reset on death vs server
+        minecraft_xp_total = GaugeMetricFamily(
+            'minecraft_xp_total',
             "The total amount of XP the player has collected over time;"
             " used for the Score upon death.", labels=['player'])
-        player_current_level = GaugeMetricFamily(
-            'player_current_level',
+        minecraft_current_level = GaugeMetricFamily(
+            'minecraft_current_level',
             "The level shown on the XP bar.",
             labels=['player'])
-        player_health = GaugeMetricFamily(
-            'player_health',
+        minecraft_health = GaugeMetricFamily(
+            'minecraft_health',
             "How much Health the player currently has",
             labels=['player'])
-        player_food_level = GaugeMetricFamily(
-            'player_food_level',
+        minecraft_food_level = GaugeMetricFamily(
+            'minecraft_food_level',
             "The value of the hunger bar; 20 is full.",
             labels=['player'])
-        player_food_saturation_level = GaugeMetricFamily(
-            'player_food_saturation_level',
+        minecraft_food_saturation_level = GaugeMetricFamily(
+            'minecraft_food_saturation_level',
             "The food saturation the player currently has.",
             labels=['player'])
-        player_food_exhaustion_level = GaugeMetricFamily(
-            'player_food_exhaustion_level',
+        minecraft_food_exhaustion_level = GaugeMetricFamily(
+            'minecraft_food_exhaustion_level',
             "The food exhaustion the player currently has.",
             labels=['player'])
-        player_game_type = GaugeMetricFamily(
-            'player_game_type',
+        minecraft_game_type = GaugeMetricFamily(
+            'minecraft_game_type',
             "The game mode of the player."
             " 0 is Survival, 1 is Creative,"
             " 2 is Adventure and 3 is Spectator.",
             labels=['player'])
-        player_dimension = GaugeMetricFamily(
-            'player_dimension',
+        minecraft_dimension = GaugeMetricFamily(
+            'minecraft_dimension',
             "A namespaced ID of the dimension the player is in.",
             labels=['player', 'dimension'])
 
@@ -283,38 +284,38 @@ class MinecraftCollector(object):
         else:
             nbtfile = nbt.nbt.NBTFile(player_data_file_path, 'rb')
 
-            player_score.add_metric([name], nbtfile.get("Score").value)
-            result.append(player_score)
+            minecraft_score.add_metric([name], nbtfile.get("Score").value)
+            result.append(minecraft_score)
 
-            player_xp_total.add_metric([name], nbtfile.get("XpTotal").value)
-            result.append(player_xp_total)
+            minecraft_xp_total.add_metric([name], nbtfile.get("XpTotal").value)
+            result.append(minecraft_xp_total)
 
-            player_current_level.add_metric(
+            minecraft_current_level.add_metric(
                 [name], nbtfile.get("XpLevel").value)
-            result.append(player_current_level)
+            result.append(minecraft_current_level)
 
-            player_health.add_metric([name], nbtfile.get("Health").value)
-            result.append(player_health)
+            minecraft_health.add_metric([name], nbtfile.get("Health").value)
+            result.append(minecraft_health)
 
-            player_food_level.add_metric(
+            minecraft_food_level.add_metric(
                 [name], nbtfile.get("foodLevel").value)
-            result.append(player_food_level)
+            result.append(minecraft_food_level)
 
-            player_food_saturation_level.add_metric(
+            minecraft_food_saturation_level.add_metric(
                 [name], nbtfile.get("foodSaturationLevel").value)
-            result.append(player_food_saturation_level)
+            result.append(minecraft_food_saturation_level)
 
-            player_food_exhaustion_level.add_metric(
+            minecraft_food_exhaustion_level.add_metric(
                 [name], nbtfile.get("foodExhaustionLevel").value)
-            result.append(player_food_exhaustion_level)
+            result.append(minecraft_food_exhaustion_level)
 
-            player_game_type.add_metric(
+            minecraft_game_type.add_metric(
                 [name], nbtfile.get("playerGameType").value)
-            result.append(player_game_type)
+            result.append(minecraft_game_type)
 
-            player_dimension.add_metric(
+            minecraft_dimension.add_metric(
                 [name, nbtfile.get("Dimension").value], 1)
-            result.append(player_dimension)
+            result.append(minecraft_dimension)
 
         return result
 
@@ -324,46 +325,46 @@ class MinecraftCollector(object):
         # Define a metric for each category of stat
         # https://minecraft.fandom.com/wiki/Statistics#Statistic_types_and_names
         blocks_mined = CounterMetricFamily(
-            'blocks_mined',
+            'minecraft_blocks_mined_total',
             'The count of blocks a player mined by block type.',
             labels=['player', 'block'])
         items_broken = CounterMetricFamily(
-            'items_broken',
+            'minecraft_items_broken_total',
             'The count of items a player has used to negative durability.',
             labels=['player', 'item'])
         items_crafted = CounterMetricFamily(
-            'items_mined',
+            'minecraft_items_crafted_total',
             'The count of items a player has crafted, smelted, etc.',
             labels=['player', 'item'])
         items_used = CounterMetricFamily(
-            'items_used',
+            'minecraft_items_used_total',
             'The count of blocks or items a player used.',
             labels=['player', 'item'])
         items_picked_up = CounterMetricFamily(
-            'items_picked_up',
+            'minecraft_items_picked_up_total',
             'The count of items a player picked up.',
             labels=['player', 'item'])
         items_dropped = CounterMetricFamily(
-            'items_dropped',
+            'minecraft_items_dropped_total',
             'The count of items a player has dropped.',
             labels=['player', 'item'])
         entities_killed = CounterMetricFamily(
-            'entities_killed',
+            'minecraft_entities_killed_total',
             "The count of entities killed by a player.",
             labels=['player', 'entity'])
         entities_killed_by = CounterMetricFamily(
-            'entities_killed_by',
+            'minecraft_entities_killed_by_total',
             "The count of entities that killed a player",
             labels=['player', 'entity'])
 
         mc_custom = CounterMetricFamily(
-            'mc_custom', "Custom Minecraft stat",
+            'minecraft_custom', "Custom Minecraft stat",
             labels=['player', 'custom_stat'])
 
         # Let's break out some sub-categories from the
         # custom stats to avoid high label cardinality (where we can)
         minecraft_distance_traveled_cm = CounterMetricFamily(
-            'minecraft_distance_traveled_cm',
+            'minecraft_distance_traveled_cm_total',
             "The total distance traveled by method of transportation.",
             labels=['player', 'method'])
 
@@ -398,58 +399,42 @@ class MinecraftCollector(object):
 
             if "minecraft:mined" in stats:
                 for block, value in stats["minecraft:mined"].items():
-                    blocks_mined.add_sample(
-                        "blocks_mined", value=value,
-                        labels={'player': name, 'block': block})
+                    blocks_mined.add_metric([name, block], value)
                 result.append(blocks_mined)
 
             if "minecraft:broken" in stats:
                 for item, value in stats["minecraft:broken"].items():
-                    items_broken.add_sample(
-                        "items_broken", value=value,
-                        labels={'player': name, 'item': item})
+                    items_broken.add_metric([name, item], value)
                 result.append(items_broken)
 
             if "minecraft:crafted" in stats:
                 for item, value in stats["minecraft:crafted"].items():
-                    items_crafted.add_sample(
-                        "items_crafted", value=value,
-                        labels={'player': name, 'item': item})
+                    items_crafted.add_metric([name, item], value)
                 result.append(items_crafted)
 
             if "minecraft:used" in stats:
                 for item, value in stats["minecraft:used"].items():
-                    items_used.add_sample(
-                        "items_used", value=value,
-                        labels={'player': name, 'item': item})
+                    items_used.add_metric([name, item], value)
                 result.append(items_used)
 
             if "minecraft:picked_up" in stats:
                 for item, value in stats["minecraft:picked_up"].items():
-                    items_picked_up.add_sample(
-                        "items_picked_up", value=value,
-                        labels={'player': name, 'item': item})
+                    items_picked_up.add_metric([name, item], value)
                 result.append(items_picked_up)
 
             if "minecraft:items_dropped" in stats:
                 for item, value in stats["minecraft:items_dropped"].items():
-                    items_dropped.add_sample(
-                        "items_dropped", value=value,
-                        labels={'player': name, 'item': item})
+                    items_dropped.add_metric([name, item], value)
                 result.append(items_dropped)
 
             if "minecraft:killed" in stats:
                 for entity, value in stats["minecraft:killed"].items():
-                    entities_killed.add_sample(
-                        "entities_killed", value=value,
-                        labels={'player': name, 'entity': entity})
+                    entities_killed.add_metric([name, entity], value)
                 result.append(entities_killed)
 
             if "minecraft:killed_by" in stats:
                 for entity, value in stats["minecraft:killed_by"].items():
-                    entities_killed_by.add_sample(
-                        "entities_killed_by", value=value,
-                        labels={'player': name, 'entity': entity})
+                    entities_killed_by.add_metric([name, entity], value)
                 result.append(entities_killed_by)
 
             # Grab the custom stats
