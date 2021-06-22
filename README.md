@@ -1,6 +1,6 @@
 # minecraft-exporter
 
-this is a prometheus minecraft exporter
+This is a Prometheus Minecraft exporter.
 This exporter reads minecrafts nbt files, the advancements files and can optionally connect via RCON to your minecraft server.
 
 to use it mount your world to /world in the container
@@ -34,44 +34,65 @@ docker run -e RCON_HOST=127.0.0.1 \
 ```
 
 # Metrics
+The metrics exported can be broken up into 3 categories which come from 4 sources.
+
+| Source | Category |
+| ------ | -------- |
+| world/advancements | Player Advancements |
+| world/playerdata | Player Specific Data | 
+| world/stats | Game stats per player |
+| rcon | Player Specific Data |
+
+## Advancement Metrics
 
 ```
-blocks_mined
-blocks_picked_up
-player_deaths
-player_jumps
-cm_traveled
-player_xp_total
-player_current_level
-player_food_level
-player_health
-player_score
-entities_killed
-damage_taken
-damage_dealt
-blocks_crafted
-player_playtime
-player_advancements
-player_slept
-player_used_crafting_table
-player_quests_finished # support for betterquesting
-mc_custom # for 1.15
-```
-the following Metrics are only exported if RCON is configured:
-```
-dim_tps
-dim_ticktime
-overall_tps
-overall_ticktime
-player_online
+minecraft_advancement_data_version
+minecraft_advancement_story_count
+minecraft_advancement_nether_count
+minecraft_advancement_end_count
+minecraft_advancement_adventure_count
+minecraft_advancement_husbandry_count
+minecraft_advancement_recipe_count
+minecraft_advancement_other_count
 ```
 
-the following Metrics are exposed if Dynmap Support is enabled:
+## Player Metrics
 
 ```
-dynmap_tile_render_statistics
-dynmap_chunk_loading_statistics_count
-dynmap_chunk_loading_statistics_duration
+minecraft_score
+minecraft_xp_total
+minecraft_current_level
+minecraft_health
+minecraft_food_level
+minecraft_food_saturation_level
+minecraft_food_exhaustion_level
+minecraft_game_type
+minecraft_dimension
+```
+
+## Stats Metrics
+
+```
+minecraft_blocks_mined_total
+minecraft_items_broken_total
+minecraft_items_crafted_total
+minecraft_items_used_total
+minecraft_items_picked_up_total
+minecraft_items_dropped_total
+minecraft_entities_killed_total
+minecraft_entities_killed_by_total
+minecraft_custom
+minecraft_distance_traveled_cm_total
+minecraft_interactions_total
+minecraft_damage_total
+```
+
+## RCON Metrics
+
+(only exported if RCON is configured)
+
+```
+minecraft_player_online
 ```
 
 # Dashboards

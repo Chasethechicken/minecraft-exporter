@@ -132,7 +132,7 @@ class MinecraftCollector(object):
 
     def get_player_advancements(self, uuid, name):
         result = []
-        print("get_player_advancements")
+        logger.debug("Getting advancements for %s / %s." % (uuid, name))
 
         data_version_metric = CounterMetricFamily(
             'minecraft_advancement_data_version',
@@ -234,7 +234,7 @@ class MinecraftCollector(object):
 
     def get_player_data(self, uuid, name):
         result = []
-        print("get_player_data")
+        logger.debug("Getting player data for %s / %s." % (uuid, name))
 
         #  TODO double check that score resets on death in server
         minecraft_score = GaugeMetricFamily(
@@ -321,7 +321,8 @@ class MinecraftCollector(object):
 
     def get_player_stats(self, uuid, name):
         result = []
-        print("get_player_stats")
+
+        logger.debug("Getting player stats for %s / %s." % (uuid, name))
         # Define a metric for each category of stat
         # https://minecraft.fandom.com/wiki/Statistics#Statistic_types_and_names
         blocks_mined = CounterMetricFamily(
