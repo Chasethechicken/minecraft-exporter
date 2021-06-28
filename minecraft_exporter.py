@@ -29,6 +29,22 @@ ch.setFormatter(formatter)
 m_logger.addHandler(ch)
 
 MOJANG_API_NAMES_URL = "https://api.mojang.com/user/profiles/%s/names"
+MC_DIMENSION_OVERWORLD = "minecraft:overworld"
+MC_DIMENSION_NETHER = "minecraft:the_nether"
+MC_DIMENSION_THE_END = "minecraft:the_end"
+
+
+def get_dimension_value(dimension):
+    if dimension == MC_DIMENSION_OVERWORLD:
+        result = 1
+    elif dimension == MC_DIMENSION_NETHER:
+        result = 2
+    elif dimension == MC_DIMENSION_THE_END:
+        result = 3
+    else:
+        result = 4
+
+    return result
 
 
 class MinecraftCollector(object):
@@ -313,8 +329,11 @@ class MinecraftCollector(object):
                 [name], nbtfile.get("playerGameType").value)
             result.append(minecraft_game_type)
 
+            # Give a unique value (1-3) for each default dimension
+            # and 4 for anything custom. Makes it easier to graph.
+            dimension = nbtfile.get("Dimension").value
             minecraft_dimension.add_metric(
-                [name, nbtfile.get("Dimension").value], 1)
+                [name, dimension], get_dimension_value())
             result.append(minecraft_dimension)
 
         return result
