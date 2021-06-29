@@ -1,18 +1,19 @@
+import json
+import logging
+import nbt
+import os
+import re
+import requests
+import schedule
+import time
+from mcrcon import MCRcon
+from os import listdir
+from os.path import isfile, join
 # noinspection PyProtectedMember
 from prometheus_client import start_http_server
 from prometheus_client.core import REGISTRY, \
     GaugeMetricFamily, CounterMetricFamily
-import time
-import requests
-import json
-import logging
-import nbt
-import re
-import os
-import schedule
-from mcrcon import MCRcon
-from os import listdir
-from os.path import isfile, join
+from retry import retry
 
 # Can move this around or add handlers as needed
 m_logger = logging.getLogger(__name__)
@@ -56,17 +57,27 @@ class MinecraftCollector(object):
         self.stats_directory = "%s/stats" % world_directory
         self.player_directory = "%s/playerdata" % world_directory
         self.advancements_directory = "%s/advancements" % world_directory
-
+        self.rcon_enabled = False
+        self.enable_rcon()
         self.uuid_name_map = dict()
-        self.rcon = None
 
-        schedule.every().day.at("01:00").do(self.flush_playernamecache)
+        schedule.every(24).hours.do(self.flush_player_uuid_name_map)
+
+    def enable_rcon(self):
+        """
+        Enables RCON if all 3 RCON env vars are passed in.
+        :return: schedule.CancelJob - To ensure is only enabled once
+        """
+        self.rcon_enabled = all(x in os.environ for x in [
+            'RCON_HOST', 'RCON_PASSWORD', 'RCON_PORT']
+        )
+        return schedule.CancelJob
 
     def get_players(self):
         return [f[:-5] for f in listdir(self.stats_directory) if isfile(join(self.stats_directory, f))]
 
-    def flush_playernamecache(self):
-        self.logger.info("flushing playername cache")
+    def flush_player_uuid_name_map(self):
+        self.logger.info("Flushing player UUID to name map.")
         self.uuid_name_map = dict()
         return
 
@@ -106,20 +117,24 @@ class MinecraftCollector(object):
 
         return result
 
+    @retry((ConnectionRefusedError, Exception), tries=15, delay=2)
     def rcon_command(self, command):
-        if self.rcon is None:
-            self.rcon = MCRcon(os.environ['RCON_HOST'], os.environ['RCON_PASSWORD'], port=int(os.environ['RCON_PORT']))
-            self.rcon.connect()
+        if not self.rcon_enabled:
+            self.logger.debug("RCON disabled.")
+            return None
+
         try:
-            response = self.rcon.command(command)
-        except BrokenPipeError:
-            self.logger.error("Lost RCON Connection, trying to reconnect")
-            self.rcon.connect()
-            response = self.rcon.command(command)
+            self.logger.debug("Attempting to run RCON command: %s" % command)
+            with MCRcon(os.environ['RCON_HOST'],
+                        os.environ['RCON_PASSWORD'],
+                        port=int(os.environ['RCON_PORT'])) as mcr:
+                result = mcr.command(command)
+                self.logger.debug("RCON result was: %s" % result)
+        except ConnectionRefusedError as cre:
+            self.logger.error("RCON connection refused, is the server up?")
+            raise cre
 
-        self.logger.info("rcon command %s got %s" % (command, response))
-
-        return response
+        return result
 
     def get_server_stats(self):
         metrics = []
@@ -137,7 +152,17 @@ class MinecraftCollector(object):
         metrics.append(player_online)
 
         # player
-        resp = self.rcon_command("list")
+        try:
+            resp = self.rcon_command("list")
+        except ConnectionRefusedError:
+            logger.error("Could not connect via RCON after 30 seconds."
+                         "Will try again in 1 hour, or restart exporter.")
+            self.rcon_enabled = False
+            # this will only run once due to return value of enable_rcon()
+            schedule.every(1).hours.do(self.enable_rcon())
+            return []
+
+        # TODO come back here and make a metric out of online / max players
         player_regex = re.compile("players online:(.*)")
         if player_regex.findall(resp):
             for player in player_regex.findall(resp)[0].split(","):
@@ -333,7 +358,7 @@ class MinecraftCollector(object):
             # and 4 for anything custom. Makes it easier to graph.
             dimension = nbtfile.get("Dimension").value
             minecraft_dimension.add_metric(
-                [name, dimension], get_dimension_value())
+                [name, dimension], get_dimension_value(dimension))
             result.append(minecraft_dimension)
 
         return result

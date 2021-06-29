@@ -3,3 +3,4 @@ NBT==1.5.0
 prometheus-client==0.11.0
 requests==2.25.1
 schedule==1.1.0
+retry==0.9.2
