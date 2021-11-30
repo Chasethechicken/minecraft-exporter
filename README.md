@@ -78,7 +78,7 @@ minecraft_items_picked_up_total
 minecraft_items_dropped_total
 minecraft_entities_killed_total
 minecraft_entities_killed_by_total
-minecraft_custom
+minecraft_custom_total
 minecraft_distance_traveled_cm_total
 minecraft_interactions_total
 minecraft_damage_total
@@ -95,8 +95,6 @@ custom_stat=minecraft:sneak_time
 custom_stat=minecraft:time_since_death
 custom_stat=minecraft:time_since_rest
 custom_stat=minecraft:leave_game
-custom_stat=minecraft:damage_dealt
-custom_stat=minecraft:damage_taken
 ```
 
 ## RCON Metrics
@@ -106,11 +104,3 @@ custom_stat=minecraft:damage_taken
 ```
 minecraft_player_online
 ```
-
-# Dashboards
-
-In the folder dashboards you'll find grafana dashboards for these metrics, they are however incomplete and can be expanded 
-or use the following dasboards:
-
-https://grafana.com/grafana/dashboards/11993  
-https://grafana.com/grafana/dashboards/11994
