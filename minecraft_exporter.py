@@ -495,11 +495,11 @@ class MinecraftCollector(object):
                 if custom_stat.endswith("one_cm"):
                     minecraft_distance_traveled_cm.add_metric(
                         [name, custom_stat], value)
-                elif custom_stat.startswith("interact"):
+                elif custom_stat.startswith("minecraft:interact"):
                     minecraft_interactions_total.add_metric(
                         [name, custom_stat], value
                     )
-                elif custom_stat.startswith("damage"):
+                elif custom_stat.startswith("minecraft:damage"):
                     minecraft_damage_total.add_metric(
                         [name, custom_stat], value
                     )
