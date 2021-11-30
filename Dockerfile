@@ -1,4 +1,4 @@
-FROM python:3-alpine
+FROM docker.io/library/python:3.9-alpine
 
 COPY requirements.txt minecraft_exporter.py /
 RUN pip install --no-cache-dir -r requirements.txt

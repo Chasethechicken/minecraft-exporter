@@ -75,7 +75,11 @@ class MinecraftCollector(object):
 
     def get_players(self):
         if not isdir(self.stats_directory):
-            self.logger.warning("No stats!\nTry joining the server.\Have you mounted the world into the container?")
+            self.logger.warning(
+                "No stats!"
+                "\nTry joining the server."
+                "\nHave you mounted the world into the container?"
+            )
             return []
         else:
             return [f[:-5] for f in listdir(self.stats_directory) if isfile(join(self.stats_directory, f))]
