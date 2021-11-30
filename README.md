@@ -43,14 +43,14 @@ The metrics exported can be broken up into 3 categories which come from 4 source
 ## Advancement Metrics
 
 ```
-minecraft_advancement_data_version
-minecraft_advancement_story_count
-minecraft_advancement_nether_count
-minecraft_advancement_end_count
-minecraft_advancement_adventure_count
-minecraft_advancement_husbandry_count
-minecraft_advancement_recipe_count
-minecraft_advancement_other_count
+minecraft_advancement_data_version_total
+minecraft_advancement_story_count_total
+minecraft_advancement_nether_count_total
+minecraft_advancement_end_count_total
+minecraft_advancement_adventure_count_total
+minecraft_advancement_husbandry_count_total
+minecraft_advancement_recipe_count_total
+minecraft_advancement_other_count_total
 ```
 
 ## Player Metrics
@@ -82,6 +82,21 @@ minecraft_custom
 minecraft_distance_traveled_cm_total
 minecraft_interactions_total
 minecraft_damage_total
+```
+
+### Minecraft Custom
+
+```
+custom_stat=minecraft:deaths
+custom_stat=minecraft:total_world_time
+custom_stat=minecraft:play_time
+custom_stat=minecraft:jump
+custom_stat=minecraft:sneak_time
+custom_stat=minecraft:time_since_death
+custom_stat=minecraft:time_since_rest
+custom_stat=minecraft:leave_game
+custom_stat=minecraft:damage_dealt
+custom_stat=minecraft:damage_taken
 ```
 
 ## RCON Metrics
