@@ -8,7 +8,7 @@ import schedule
 import time
 from mcrcon import MCRcon
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, isdir, join
 # noinspection PyProtectedMember
 from prometheus_client import start_http_server
 from prometheus_client.core import REGISTRY, \
@@ -74,7 +74,11 @@ class MinecraftCollector(object):
         return schedule.CancelJob
 
     def get_players(self):
-        return [f[:-5] for f in listdir(self.stats_directory) if isfile(join(self.stats_directory, f))]
+        if not isdir(self.stats_directory):
+            self.logger.warning("No stats!\nTry joining the server.\Have you mounted the world into the container?")
+            return []
+        else:
+            return [f[:-5] for f in listdir(self.stats_directory) if isfile(join(self.stats_directory, f))]
 
     def flush_player_uuid_name_map(self):
         self.logger.info("Flushing player UUID to name map.")
